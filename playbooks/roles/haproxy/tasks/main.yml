@@ -1,0 +1,88 @@
+- name: Install HAProxy
+  dnf:
+    name: haproxy
+    state: present
+
+- name: Ensure SSL directory exists
+  file:
+    path: /etc/haproxy/ssl
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Generate self-signed certificate with HAProxy IP as CN
+  command: >
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048
+    -keyout /etc/haproxy/ssl/selfsigned.key
+    -out /etc/haproxy/ssl/selfsigned.crt
+    -subj "/CN=192.168.1.136"
+  args:
+    creates: /etc/haproxy/ssl/selfsigned.crt
+
+- name: Create combined pem file for haproxy SSL
+  shell: cat /etc/haproxy/ssl/selfsigned.key /etc/haproxy/ssl/selfsigned.crt > /etc/haproxy/haproxy.pem
+  args:
+    creates: /etc/haproxy/haproxy.pem
+
+- name: Configure HAProxy
+  template:
+    src: haproxy.cfg.j2
+    dest: /etc/haproxy/haproxy.cfg
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart haproxy
+
+- name: Install keepalived
+  package:
+    name: keepalived
+    state: present
+
+- name: Ensure sysctl allows non-local bind
+  sysctl:
+    name: net.ipv4.ip_nonlocal_bind
+    value: '1'
+    state: present
+    reload: yes
+
+- name: Deploy keepalived configuration
+  template:
+    src: keepalived.conf.j2
+    dest: /etc/keepalived/keepalived.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload keepalived
+
+- name: Enable and start keepalived
+  systemd:
+    name: keepalived
+    state: started
+    enabled: yes
+
+- name: Start HAProxy
+  service:
+    name: haproxy
+    enabled: true
+    state: started
+
+- name: Ensure firewalld is running and enabled
+  service:
+    name: firewalld
+    state: started
+    enabled: yes
+
+- name: Open HTTP port 80 in firewall
+  firewalld:
+    port: 80/tcp
+    permanent: yes
+    state: enabled
+    immediate: yes
+
+- name: Open HTTPS port 443 in firewall
+  firewalld:
+    port: 443/tcp
+    permanent: yes
+    state: enabled
+    immediate: yes

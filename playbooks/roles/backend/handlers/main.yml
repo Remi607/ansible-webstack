@@ -1,0 +1,9 @@
+- name: Reload systemd
+  command: systemctl daemon-reload
+  become: true
+
+- name: Restart tomcat
+  service:
+    name: tomcat
+    state: restarted
+  become: true

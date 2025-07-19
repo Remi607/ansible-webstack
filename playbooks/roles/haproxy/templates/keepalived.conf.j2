@@ -1,0 +1,43 @@
+global_defs {
+    router_id LVS_{{ inventory_hostname }}
+    enable_script_security
+}
+
+vrrp_script chk_haproxy {
+    script "/usr/bin/killall -0 haproxy"
+    interval 2
+    weight 50
+    fall 2
+    rise 2
+    timeout 2
+    user root
+}
+
+vrrp_instance VI_01 {
+    interface {{ ansible_default_ipv4.interface | default('eth0') }}
+    state {{ 'MASTER' if inventory_hostname == groups['haproxy'][0] else 'BACKUP' }}
+    virtual_router_id 51
+    priority {{ 101 if inventory_hostname == groups['haproxy'][0] else 100 }}
+    advert_int 1
+    unicast_src_ip {{ ansible_default_ipv4.address }}
+    unicast_peer {
+        {% for host in groups['haproxy'] %}
+        {% if host != inventory_hostname %}
+        {{ hostvars[host]['ansible_default_ipv4']['address'] }}
+        {% endif %}
+        {% endfor %}
+    }
+    authentication {
+        auth_type PASS
+        auth_pass securepass
+    }
+    virtual_ipaddress {
+        192.168.1.140/24 dev {{ ansible_default_ipv4.interface | default('eth0') }}
+    }
+    track_script {
+        chk_haproxy
+    }
+    notify_master "/bin/echo '$(date) MASTER for VIP 192.168.1.140' >> /var/log/keepalived-status.log"
+    notify_backup "/bin/echo '$(date) BACKUP for VIP 192.168.1.140' >> /var/log/keepalived-status.log"
+    notify_fault "/bin/echo '$(date) FAULT for VIP 192.168.1.140' >> /var/log/keepalived-status.log"
+}

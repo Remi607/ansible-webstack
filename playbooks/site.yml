@@ -1,0 +1,17 @@
+- hosts: all
+  become: yes
+
+- hosts: all
+  roles:
+    - common
+
+- hosts: backends
+  roles:
+    - backend
+
+- hosts: haproxy
+  gather_facts: no
+  vars:
+    keepalived_interface: eth0
+  roles:
+    - haproxy

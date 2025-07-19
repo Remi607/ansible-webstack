@@ -1,0 +1,126 @@
+---
+- name: Install Apache HTTPD and dependencies
+  yum:
+    name:
+      - httpd
+      - java-1.8.0-openjdk
+    state: present
+
+- name: Ensure Apache is enabled and started
+  service:
+    name: httpd
+    state: started
+    enabled: true
+
+- name: Deploy static index.html to Apache web root
+  copy:
+    src: files/index.html
+    dest: /var/www/html/index.html
+    owner: apache
+    group: apache
+    mode: '0644'
+
+- name: Download Tomcat
+  get_url:
+    url: https://dlcdn.apache.org/tomcat/tomcat-9/v9.0.107/bin/apache-tomcat-9.0.107.tar.gz
+    dest: /opt/tomcat.tar.gz
+
+- name: Extract Tomcat
+  unarchive:
+    src: /opt/tomcat.tar.gz
+    dest: /opt
+    remote_src: yes
+
+- name: Create symbolic link for Tomcat
+  file:
+    src: /opt/apache-tomcat-9.0.107
+    dest: /opt/tomcat
+    state: link
+
+- name: Ensure tomcat user exists
+  user:
+    name: tomcat
+    shell: /sbin/nologin
+    home: /opt/tomcat
+    create_home: no
+
+- name: Set ownership of Tomcat directory
+  file:
+    path: /opt/tomcat
+    state: directory
+    recurse: yes
+    owner: tomcat
+    group: tomcat
+
+- name: Deploy hello.jsp to Tomcat
+  copy:
+    src: files/hello.jsp
+    dest: /opt/tomcat/webapps/ROOT/hello.jsp
+    owner: tomcat
+    group: tomcat
+    mode: '0644'
+
+- name: Copy systemd service file for Tomcat
+  copy:
+    src: tomcat.service
+    dest: /etc/systemd/system/tomcat.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload systemd
+
+- name: Copy systemd service file for Tomcat
+  copy:
+    src: files/tomcat.service
+    dest: /etc/systemd/system/tomcat.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload systemd
+
+- name: Enable and start Tomcat service
+  systemd:
+    name: tomcat
+    enabled: yes
+    state: started
+  become: true
+
+- name: Configure Apache reverse proxy to Tomcat
+  copy:
+    dest: /etc/httpd/conf.d/tomcat_proxy.conf
+    content: |
+      <VirtualHost *:80>
+          ProxyPreserveHost On
+          ProxyPass /app http://localhost:8080/
+          ProxyPassReverse /app http://localhost:8080/
+          DocumentRoot /var/www/html
+          <Directory "/var/www/html">
+              AllowOverride None
+              Require all granted
+          </Directory>
+      </VirtualHost>
+
+- name: Restart Apache
+  service:
+    name: httpd
+    state: restarted
+
+- name: Ensure firewalld is running and enabled
+  service:
+    name: firewalld
+    state: started
+    enabled: yes
+
+- name: Open port 80 for Apache HTTP
+  firewalld:
+    port: 80/tcp
+    permanent: true
+    state: enabled
+    immediate: yes
+
+- name: Open port 8080 for Tomcat
+  firewalld:
+    port: 8080/tcp
+    permanent: true
+    state: enabled
+    immediate: yes

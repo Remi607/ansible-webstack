@@ -1,0 +1,39 @@
+global
+    log /dev/log local0
+    maxconn 2000
+    user haproxy
+    group haproxy
+    daemon
+
+defaults
+    log     global
+    mode    http
+    option  httplog
+    option  dontlognull
+    timeout connect 5s
+    timeout client  50s
+    timeout server  50s
+
+frontend http_in
+    bind *:80
+    redirect scheme https code 301 if !{ ssl_fc }
+
+frontend https_in
+    bind *:443 ssl crt /etc/haproxy/haproxy.pem
+    acl app_path path_beg /app/
+    use_backend backend_servers if app_path
+    default_backend apache_servers
+
+backend backend_servers
+    balance roundrobin
+    option httpchk GET /hello.jsp
+    http-request set-path %[path,regsub(^/app/,/)]
+    server backend1 192.168.1.137:8080 check
+    server backend2 192.168.1.138:8080 check
+
+backend apache_servers
+    balance roundrobin
+    option httpchk GET /
+    server backend1 192.168.1.137:80 check
+    server backend2 192.168.1.138:80 check
+
